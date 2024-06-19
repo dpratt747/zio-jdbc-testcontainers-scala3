@@ -1,7 +1,8 @@
 package database
 
 import domain.PortDetails
-import util.TestContainerResource
+import org.flywaydb.core.api.output.ValidateResult
+import util.{FlywayResource, TestContainerResource}
 import zio.*
 import zio.jdbc.*
 import zio.test.*
@@ -19,7 +20,7 @@ object DatabaseExampleSpec extends ZIOSpecDefault {
   override def spec =
     suite("DatabaseInterpreter")(
       test("can successfully connect to a Postgres db instance") {
-        TestContainerResource.resource.flatMap { postgresContainer =>
+        TestContainerResource.postgresResource.flatMap { postgresContainer =>
           (for {
             underTest <- transaction {
               sql"SELECT datname FROM pg_database".query[String].selectOne
@@ -36,6 +37,34 @@ object DatabaseExampleSpec extends ZIOSpecDefault {
         }.provide(
           Scope.default
         )
+      } @@ TestAspect.timeout(zio.Duration.fromSeconds(35)),
+      test("can successfully insert into a Postgres db instance that has been migrated with flyway") {
+        TestContainerResource.postgresResource.flatMap { postgresContainer =>
+          (for {
+            flyway <- FlywayResource.flywayResource(postgresContainer.getJdbcUrl, postgresContainer.getUsername, postgresContainer.getPassword)
+            validationResult: ValidateResult <- ZIO.attempt(flyway.validateWithResult())
+            insertSqlFrag = sql"insert into user_table (user_name, first_name, last_name)".values(("LimbMissing", "David", "Pratt"))
+            getSqlFrag = sql"select * from user_table".query[(Int, String, String, String)]
+            underTest <- transaction (
+              insertSqlFrag.insert.zip(getSqlFrag.selectAll)
+            )
+          } yield assertTrue(
+            validationResult.validationSuccessful,
+            underTest match {
+              case (longRowsUpdated, Chunk((_, userName, firstName, lastName))) =>
+                longRowsUpdated == 1 && userName == "LimbMissing" && firstName == "David" && lastName == "Pratt"
+            }
+          )).provide(
+            connectionPool(
+              postgresContainer.getHost,
+              postgresContainer.getMappedPort(PortDetails.PostgresPort.port),
+              postgresContainer.getDatabaseName,
+              properties(postgresContainer.getUsername, postgresContainer.getPassword)
+            ),
+            ZLayer.succeed(ZConnectionPoolConfig.default),
+            Scope.default
+          )
+        }
       } @@ TestAspect.timeout(zio.Duration.fromSeconds(35))
     )
 }
