@@ -1,0 +1,24 @@
+package util
+
+import com.dimafeng.testcontainers.PostgreSQLContainer
+import domain.PortDetails
+import zio.*
+
+object TestContainerResource {
+
+  private val initAndStart: ZIO[Any, Throwable, org.testcontainers.containers.PostgreSQLContainer[?]] = for {
+    container: org.testcontainers.containers.PostgreSQLContainer[?] <- ZIO.attempt(PostgreSQLContainer().container)
+    _ <- ZIO.attempt(container.start())
+    _ <- ZIO.logInfo(s"Starting PostgreSQL test-container instance. Url: [${container.getJdbcUrl}]" +
+      s" Port: [${container.getMappedPort(PortDetails.PostgresPort.port)}]")
+  } yield container
+
+  val resource: ZIO[Any & Scope, Throwable, org.testcontainers.containers.PostgreSQLContainer[?]] =
+    ZIO.acquireRelease(initAndStart)(postgresSQLContainer =>
+        ZIO.attempt(postgresSQLContainer.stop()).orDie
+      )
+      .zipLeft(ZIO.logInfo("Stopping PostgreSQL server"))
+      .tapError(t =>
+        ZIO.logErrorCause(s"Failed to stop PostgreSQL server", Cause.die(t)))
+
+}

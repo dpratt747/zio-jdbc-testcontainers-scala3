@@ -1,0 +1,10 @@
+/.bsp/
+/.bloop/
+/.idea/
+/.metals/
+/.vscode/
+/integration/target/
+/project/target/
+/target/
+/project/project/
+/project/.bloop/
