@@ -37,22 +37,25 @@ object DatabaseExampleSpec extends ZIOSpecDefault {
         }.provide(
           Scope.default
         )
-      } @@ TestAspect.timeout(zio.Duration.fromSeconds(35)),
+      },
       test("can successfully insert into a Postgres db instance that has been migrated with flyway") {
         TestContainerResource.postgresResource.flatMap { postgresContainer =>
           (for {
             flyway <- FlywayResource.flywayResource(postgresContainer.getJdbcUrl, postgresContainer.getUsername, postgresContainer.getPassword)
             validationResult: ValidateResult <- ZIO.attempt(flyway.validateWithResult())
-            insertSqlFrag = sql"insert into user_table (user_name, first_name, last_name)".values(("LimbMissing", "David", "Pratt"))
-            getSqlFrag = sql"select * from user_table".query[(Int, String, String, String)]
-            underTest <- transaction (
-              insertSqlFrag.insert.zip(getSqlFrag.selectAll)
+            uName = "LimbMissing"
+            fName = "David"
+            lName= "Pratt"
+            insertSqlFrag = sql"insert into user_table (user_name, first_name, last_name)".values((uName, fName, lName))
+            selectSqlFrag = sql"select * from user_table".query[(Int, String, String, String)]
+            underTest <- transaction(
+              insertSqlFrag.insert *> selectSqlFrag.selectAll
             )
           } yield assertTrue(
             validationResult.validationSuccessful,
             underTest match {
-              case (longRowsUpdated, Chunk((_, userName, firstName, lastName))) =>
-                longRowsUpdated == 1 && userName == "LimbMissing" && firstName == "David" && lastName == "Pratt"
+              case Chunk((_, userName, firstName, lastName)) =>
+                userName == uName && firstName == fName && lastName == lName
             }
           )).provide(
             connectionPool(
@@ -65,6 +68,6 @@ object DatabaseExampleSpec extends ZIOSpecDefault {
             Scope.default
           )
         }
-      } @@ TestAspect.timeout(zio.Duration.fromSeconds(35))
-    )
+      }
+    ) @@ TestAspect.timeout(zio.Duration.fromSeconds(35))
 }
