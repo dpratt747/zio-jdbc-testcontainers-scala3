@@ -1,5 +1,6 @@
 package database
 
+import database.schemas.UserTable
 import domain.PortDetails
 import org.flywaydb.core.api.output.ValidateResult
 import util.{FlywayResource, TestContainerResource}
@@ -45,17 +46,18 @@ object DatabaseExampleSpec extends ZIOSpecDefault {
             validationResult: ValidateResult <- ZIO.attempt(flyway.validateWithResult())
             uName = "LimbMissing"
             fName = "David"
-            lName= "Pratt"
+            lName = "Pratt"
             insertSqlFrag = sql"insert into user_table (user_name, first_name, last_name)".values((uName, fName, lName))
-            selectSqlFrag = sql"select * from user_table".query[(Int, String, String, String)]
+            //            selectSqlFrag = sql"select * from user_table".query[(Int, String, String, String)]
+            selectSqlFrag = sql"select * from user_table".query[UserTable]
             underTest <- transaction(
               insertSqlFrag.insert *> selectSqlFrag.selectAll
             )
           } yield assertTrue(
             validationResult.validationSuccessful,
             underTest match {
-              case Chunk((_, userName, firstName, lastName)) =>
-                userName == uName && firstName == fName && lastName == lName
+              case Chunk(userTableRow) =>
+                userTableRow.userName == uName && userTableRow.firstName == fName && userTableRow.lastName == lName
             }
           )).provide(
             connectionPool(
