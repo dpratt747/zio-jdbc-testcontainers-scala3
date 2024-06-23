@@ -3,20 +3,12 @@ package database
 import database.schemas.UserTable
 import domain.PortDetails
 import org.flywaydb.core.api.output.ValidateResult
-import util.{FlywayResource, TestContainerResource}
+import util.*
 import zio.*
 import zio.jdbc.*
 import zio.test.*
 
 object DatabaseExampleSpec extends ZIOSpecDefault {
-
-  def connectionPool(host: String, port: Int, database: String, props: Map[String, String]): ZLayer[ZConnectionPoolConfig, Throwable, ZConnectionPool] =
-    ZConnectionPool.postgres(host, port, database, props)
-
-  private def properties(user: String, password: String) = Map(
-    "user" -> user,
-    "password" -> password
-  )
 
   override def spec =
     suite("DatabaseInterpreter")(
@@ -27,17 +19,16 @@ object DatabaseExampleSpec extends ZIOSpecDefault {
               sql"SELECT datname FROM pg_database".query[String].selectOne
             }
           } yield assertTrue(underTest.contains("postgres"))).provide(
-            connectionPool(
+            ZConnectionPoolWrapper.connectionPool(
               postgresContainer.getHost,
               postgresContainer.getMappedPort(PortDetails.PostgresPort.port),
               postgresContainer.getDatabaseName,
-              properties(postgresContainer.getUsername, postgresContainer.getPassword)
+              postgresContainer.getUsername,
+              postgresContainer.getPassword
             ),
             ZLayer.succeed(ZConnectionPoolConfig.default)
           )
-        }.provide(
-          Scope.default
-        )
+        }
       },
       test("can successfully insert into a Postgres db instance that has been migrated with flyway") {
         TestContainerResource.postgresResource.flatMap { postgresContainer =>
@@ -60,11 +51,12 @@ object DatabaseExampleSpec extends ZIOSpecDefault {
                 userTableRow.userName == uName && userTableRow.firstName == fName && userTableRow.lastName == lName
             }
           )).provide(
-            connectionPool(
+            ZConnectionPoolWrapper.connectionPool(
               postgresContainer.getHost,
               postgresContainer.getMappedPort(PortDetails.PostgresPort.port),
               postgresContainer.getDatabaseName,
-              properties(postgresContainer.getUsername, postgresContainer.getPassword)
+              postgresContainer.getUsername,
+              postgresContainer.getPassword
             ),
             ZLayer.succeed(ZConnectionPoolConfig.default),
             Scope.default
